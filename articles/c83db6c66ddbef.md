@@ -1,3 +1,11 @@
+---
+title: "Sedにコンパイルできる言語を作る"
+emoji: "🧘‍♂️"
+topics:
+  - "sed"
+published: false
+---
+
 ## きっかけ
 
 [sedlisp](https://github.com/shinh/sedlisp)というプロジェクトとの出会いをきっかけに、私もSedというランタイム上で動く何かを作ってみたいと考えました。
