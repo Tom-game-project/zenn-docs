@@ -3,7 +3,7 @@ title: "Sedにコンパイルできる言語を作る"
 emoji: "🧘‍♂️"
 topics:
   - "sed"
-type: idea
+type: tech
 published: false
 ---
 
@@ -11,11 +11,11 @@ published: false
 
 [sedlisp](https://github.com/shinh/sedlisp)というプロジェクトとの出会いをきっかけに、sedというエディターに興味が湧きました。
 そこで、今回はsedという特殊なランタイムをターゲットにしたコンパイラ及び言語の作成に取り組もうと思います。
-以下、個人プロジェクト`sed-compiler`のコミットログを記事執筆時点での進捗まで振り返ろうと思います。
+以下、個人プロジェクト`sed-compiler`の記事執筆時点での進捗まで振り返ろうと思います。
 
 https://github.com/Tom-game-project/sed-compiler
 
-## init commit: [b0daa87](https://github.com/Tom-game-project/sed-compiler/commit/b0daa87)..
+## 初めてのsed 加算機の実装
 
 元々はsedというエディタがいかなるものかを身をもって体験しようと思って作ったリポジトリでした。
 リポジトリが作成された9月頃は、私自身まだsedの文法すらあまりわかっていないという状況だったので、お試し感覚で加算機を作ってみたのが最初のコミットです。
@@ -76,113 +76,36 @@ s/<置換したいパターン>/<置換後のパターン>/
 s/\(.*\):\(.*\):\(.*\):\(.*\):\(.*\):\(.*\):\(.*\):\(.*\):\(.*\):/\1\2\3\4\5\6\7\8\9/
 ```
 
----
+## スタックフレームの設計 関数の実現
 
-ここでできたこと、
-
-- 加算機の実装
-
-## commit: [b0daa87](https://github.com/Tom-game-project/sed-compiler/commit/b0daa87)..[a766d81](https://github.com/Tom-game-project/sed-compiler/commit/a766d81)
-
-このコミットの範囲では、sedで関数呼び出しを実現するための試行錯誤をしていました。
+先程も言ったとおり、sedには関数なる概念がありません。加算減算はともかく、乗算除算の実装に関数が使えないのはとてもしんどいです。このセクションでは、リアルなアーキテクチャで使われているようなスタックフレームの概念を参考にして関数を作成するためのアイデアを練っていきます。
 
 ![](/images/sed/image0.webp)
 
-上の図では、対応する概念が同じ色で表現されています。
+※ 上の図では、対応する概念が同じ色で表現されています。
 
 スタックフレームは関数が呼ばれたときにローカル変数や渡された引数などが保持される領域です。(&#x1f7e2;: 緑で囲まれた部分に引数、ローカル変数が入る, &#x1f7e0;: オレンジの部分がスタックフレームの単位)
 関数の呼び出しが発生するとスタックにスタックフレームがpushされ、returnされると最上部（最後にpushされたスタックフレーム）がpopされます。(&#x1f7e3;: 紫の矢印はスタックがcallされた際に伸びる向き)
 スタックフレームには更にローカル変数、引数情報以外に含めるべき情報があります。
-関数から値が返る際、次に実行すべき命令は呼び出した命令の直後である必要があります。そのためには、各スタックフレームごとにその直後のアドレスが記録されている必要があります。(&#x1f534;: 赤の部分に、返るべき命令の位置情報が保存される)
+関数から値が返る際、次に実行すべき命令は呼び出した命令の直後である必要があります。そのためには、各スタックフレームごとにその呼び出し元の直後のアドレスが記録されている必要があります。(&#x1f534;: 赤の部分に、返るべき命令の位置情報が保存される)
 
 上の画像のデータ構造をもとに、PatternスペースとHoldスペースをうまい具合にメモリとして扱い、関数に渡された引数、ローカル変数を管理していきます。
 
-a766d81:labo.sedは、上のルールでスタックフレームを構成した、簡単な再帰関数です。
-
-やっていることは以下のようなことです。
-```py
-def banana_maker(a):
-    if a == "ba":
-        return banana_maker("bana")
-    elif a == "bana":
-        return banana_maker("banana")
-    elif a == "banana":
-        return a
-    else:
-        pass
-
-banana_maker("ba")
-```
-
-リポジトリをcloneしている場合は以下のコマンドで試すことができます
-
-```sh
-# 標準入力にテキトーな文字を入れると実行できます
-echo "hello" | sed "$(git show a766d81:labo.sed)"
-```
-
----
-
-ここでできたこと、
-
-- スタックフレームの設計
-
-## commit: [a766d81](https://github.com/Tom-game-project/sed-compiler/commit/a766d81)..[00b132a](https://github.com/Tom-game-project/sed-compiler/commit/00b132a)
+## スタックフレームの自動構築 中間表現の作成
 
 関数を構築しようと思うたびに自分でスタックフレームを作るのはしんどいので、自動で行えるようにRustプログラムを書きます。
-sedより一層高級なレイヤーの中間表現(Intermediate Representation:IR)を作って、それをsedに変換する方針にします。
+sedより一層高級なレイヤーの中間表現(Intermediate Representation:IR)を設けて、それをsedに変換する方針にします。
 
 今回、sedで作ったスタックフレームは特定の文字をデリミタとしてスタックフレーム同士を区切っているため(一般的なスタックフレームのようにサイズで区切っていないため)、スタックフレームの長さを自由に変更して問題ありません。(その代わりデータにデリミタ文字は含められない)
 スタックフレームの伸び縮みが許容されるためIRはForthやWasm Text Format(WAT)のように、値をスタック指向に操作できるデザインにしました。
 
-スタック指向でデータを操作するってどういうことだ?と思った人は、以前私が書いた以下の記事を読んで見てください。
+スタック指向でデータを操作するってどういうことだ?と思った人は、以前私が書いた以下の記事を読んでみてください。
 
 https://zenn.dev/phantom/articles/2245f32683dae9
 
-以下は掛け算をIRで実装したものです。掛け算は再帰的な操作を伴います。つまりsedで実装しようとするとめんどいです。でも今はIRで書けるので、sedの事情を気にすることなく簡単に実装できます
+以下は掛け算をIRで実装したものです。掛け算は再帰的な操作を伴います。つまりsedで実装しようとするとめんどいです。でも今はIRを使えるので、sedの事情を気にすることなく簡単に実装できます
 
-```rust
-    let mut func_mul = FuncDef::new("mul", 2, 1, 1);
-    func_mul.set_proc_contents(vec![
-        SedInstruction::Val(Value::Arg(1)),
-        SedInstruction::Call(CallFunc::new("is_empty")),
-        SedInstruction::IfProc(IfProc::new(
-            vec![
-                SedInstruction::ConstVal(ConstVal::new("0")),
-                SedInstruction::Set(Value::Local(0)), // rstr
-            ],
-            vec![
-                SedInstruction::Val(Value::Arg(1)),
-                SedInstruction::Call(CallFunc::new("ends_with_zero")),
-                SedInstruction::IfProc(IfProc::new(
-                    vec![
-                        // rstr = mul(shift_left1(a), shift_right1(b))
-                        SedInstruction::Val(Value::Arg(0)), // a
-                        SedInstruction::Call(CallFunc::new("shift_left1")),
-                        SedInstruction::Val(Value::Arg(1)), // b
-                        SedInstruction::Call(CallFunc::new("shift_right1")),
-                        SedInstruction::Call(CallFunc::new("mul")),
-                        SedInstruction::Set(Value::Local(0)), // rstr
-                    ],
-                    vec![
-                        // rstr = add(a, mul(shift_left1(a), shift_right1(b)))
-                        SedInstruction::Val(Value::Arg(0)), // a
-                        SedInstruction::Call(CallFunc::new("shift_left1")),
-                        SedInstruction::Val(Value::Arg(1)), // b
-                        SedInstruction::Call(CallFunc::new("shift_right1")),
-                        SedInstruction::Call(CallFunc::new("mul")),
-                        SedInstruction::Val(Value::Arg(0)), // a
-                        SedInstruction::Call(CallFunc::new("add")),
-                        SedInstruction::Set(Value::Local(0)), // rstr
-                    ],
-                )),
-            ],
-        )),
-        // return rstr;
-        SedInstruction::Val(Value::Local(0)),
-        SedInstruction::Ret,
-    ]);
-```
+https://github.com/Tom-game-project/sed-compiler/blob/7805e272b8653ab578bae035089ea9e08cfa1c90/sed-compiler/src/embedded.rs#L46-L85
 
 Wasm Text Format(WAT)で書くとするのなら、以下のようになるでしょうか（あくまで例のため動作確認はできていませんが...）
 
@@ -192,7 +115,7 @@ Wasm Text Format(WAT)で書くとするのなら、以下のようになるで�
     call $is_empty
     (if
       (then
-        const.i32 0
+        i32.const 0
         local.set 2
       )
       (else
@@ -229,19 +152,13 @@ Wasm Text Format(WAT)で書くとするのなら、以下のようになるで�
 
 この段階でしっかりIRという概念を作ったことが後の実装のスムーズさにつながったと思います。
 
----
-
-ここでできたこと、
-
-- IRの設計
-
-- 掛け算の実装
-
-## commit: [00b132a](https://github.com/Tom-game-project/sed-compiler/commit/00b132a)..
+## 引き算
 
 ### 二の補数
 
-二進数で負数を表現しようと考えたらまずどうするでしょうか？愚直な考え方としては最上位のビットで正負を表現、というのが普通でしょう。でもこれだと0が±0の二通りで表現できてしまいます(4bit で考えたら0000b == 1000b)。
+上のセクションですでに加算と乗算は実装できました。後２つの基本的な演算は減算除算(引き算割り算)です。まずは引き算について考えます。
+
+二進数で負数を表現しようと考えたらまずどうするでしょうか？愚直な考え方としては最上位のビットで正負を表現というのが普通でしょう。でもこれだと0が±0の二通りで表現できてしまいます(4bit で考えたら0000b == 1000b)。
 
 4bitに制限して考えるとどうでしょう。下のように数が割り当てられたらうまく行きそうですよね！？
 こうすれば、0が二通りで表現されることがありません（0000b != 1000b）。
@@ -276,12 +193,74 @@ f(x) = 10000b - x
 ```
 
 こうしてめでたくマイナスの数を求めるためにマイナスを用いなくてもよくなりました。(加算(+)と反転(!)さえ実装すれば引き算が実装できる!)
+やっと引き算が実装できました。
 
-このようにして作った負数を加算機にいれると減算として機能させることができます。やっと引き算が実装できました。
+### 閑話休題
 
-#### 余談
+ここでの考え方自体は間違っていないのですが、補数を求めるsedのプログラムに偶数を入れると誤って演算中に使うデリミタが混じるバグがありました。
+このミスのせいでとんでもない時間を失うことになります。 テストはしっかり作ったほうが良いです。
 
-ここでの考え方自体は間違っていないのですが、補数を求めるsedのプログラムの実装にミスがあり後でとんでもない時間を失うことになります。 テストはしっかり作ったほうが良いです。
+## 自作言語Soilの実装 chumsky
+
+残る演算、除算及び余りの計算のため、geminiにそのやり方を聞いて自分で頑張ってそれをIRに変換しようとしていました。
+しかし、除算は若干複雑で、IRに変換する作業はかなり苦痛でした。
+
+そのため、IRよりもさらに高級な言語を作ってそれをIRに変換する方針にしました。
+
+## 除算の実装 演算の書き直し
+
+## 最適化 ~~したかった~~
+
+gcdをSoilで実装して思ったのはこのコンパイラの出力するsedはとにかく遅いということでした。gcd(x, y) == 1となるようなケースは絶望的な遅さです。
+
+sedのせいにしない場合、遅い理由は以下のようなものがあると考えられます。
+
+1. 四則演算すべてのもととなる加算機が遅い
+2. リターンアドレス解決のマッチセクションに無駄がある
+3. コンパイル時に判明するローカル変数の初期化(を処理していない)
+4. IRの命令の最適化をしていない
+
+etc..
+
+のようなものです。これらの原因のうち、
+
+`1.`はコンパイラの問題ではない。
+`3.`は重要だが面白みがない。
+
+という理由で後回しに、
+
+`2.`は関数の呼び出しが増えるたびに大きな問題になってくる可能性がある
+`4.`はIRの命令を少し増やすことで、解決の可能性があり且つ面白みがある
+
+という理由で優先的に処理することにします。
+
+### 2.リターンアドレス解決のマッチセクションに無駄がある
+
+改善前は、毎回スタックフレームが返る際にどこから来たのかを巨大なマッチ文で処理していて、最悪ケースではすべてのパスを調べていました。
+すなわち、funcAからの返り道なのに、funcA以外を呼び出している場所に返る可能性も含めて検索してしまっている状態です。
+根本的なマッチセクションの配置を見直して、関数ごとに分割することで、無駄なパスを考慮しないようにしました。
+
+### 4.IRの命令の最適化をしていない
+
+コンパイルの一連のプロセス、言語 -> 中間表現 -> sed、をよく観察してみると、中間表現によく現れる命令のパターンがあります。
+例えば、以下のようなものです。
+
+![](/images/sed/ir.webp)
+
+```wasm
+local.set 1
+local.get 1
+call somefunc
+```
+
+何をしているかといえば、スタックをpopし、その値を変数にセット、更に変数の内容をもう一度スタックにプッシュして、関数呼び出しでそれを消費。
+これは、変数に値を代入してからすぐにその変数を関数に引数として与える場合によく見られます。
+
+先程の画像のIRは、以下のコードと対応しています。4とナンバリングされている変数は元々`R_new`という名前の変数です。
+
+https://github.com/Tom-game-project/sed-compiler/blob/7805e272b8653ab578bae035089ea9e08cfa1c90/sed-compiler/soil/basic_operations.soil#L184-L185
+
+上の操作は、もしスタックのトップを消費せずに変数に値をセットする命令があれば、２つの命令を1つにできて省エネになります。そして、スタック指向の言語Wasm Text Format(WAT)にもそのような[命令tee](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/Variables/local.tee)があります。
 
 ## まとめ
 
