@@ -6,7 +6,7 @@ topics:
   - "rust"
   - "compiler"
 type: tech
-published: false
+published: true
 ---
 
 nishishinjuku-ctf アドベントカレンダー2日目
