@@ -1,5 +1,5 @@
 ---
-title: "GAS(Google Apps Script)上でRustを動かす"
+title: "Google Apps Script(GAS)上でRustを動かす"
 emoji: "📦"
 type: "tech"
 topics:
@@ -14,6 +14,37 @@ published: false
 本日の成果物は以下のレポジトリから見ることができます。
 
 https://github.com/Tom-game-project/GoogleAppsScript-in-rust-example
+
+## GASでRustを使いたい理由
+
+rustをGAS上で扱いたいモチベーションはいくつかあります。
+
+1. Rustの文法を使える
+2. Rust製のツールを使える(crates.io)
+3. Rustが好きである
+
+etc..
+
+### 1. Rustの文法を使える
+
+例えば、GASではよくスプレッドシートを扱います。そして、スプレッドシートというのは入力した値を一様に文字列として扱うのではなく、無駄に空気を読んでそれ用のデータに勝手に変換します。
+
+なので、GASプログラマはそれを読み込む際にチェックが必要です。
+Rustの文法が使えるとそんなスプレッドシートも楽に且つロバストに扱えます。以下のように！
+
+https://github.com/Tom-game-project/GoogleAppsScript-in-rust-example/blob/72f9fda318e69b4a5848d2dc4835f29a7ee3fefa/src/lib.rs#L75-L124
+
+`match`や`if let`のような文法を扱えるので、自然とすべてのパターンを網羅できます。
+
+### 2. Rust製のツールを使える(crates.io)
+
+例えば、簡単な
+
+### 3. Rustが好きである
+
+もう、Rustばっかり書いていたら、それしか書けなくなってしまったという人もいるでしょう。
+
+## Wasmコンポーネント
 
 ## 背景
 
@@ -45,7 +76,8 @@ Loggerのインターフェイスが具体的に提供いなければいけな�
 
 実装は`js/`ディレクトリ以下にあります。
 
-## 少々面倒な問題の数々
+
+## 大きな問題
 
 ### BigInt
 
