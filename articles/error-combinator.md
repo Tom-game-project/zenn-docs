@@ -14,65 +14,148 @@ https://crates.io/crates/error-combinator
 
 https://github.com/Tom-game-project/error-combinator
 
-## 作った動機
+## これは何か？
 
-ユーザーのフォーム入力やconfigファイルのチェックに、複数の条件について満たしているかをチェックする機能を実装したいと考えていました。具体的なチェック項目がいくつかあり、複数あるチェック関数はおよそ以下のように設計したいです.
+Configファイルやフォーム設定が正しい形式であるか、設定の辻褄があっているかというバリデーションをする際のチェッカー作成を助けるライブラリです.
 
-```rs
-/* 擬似的な例 */
-// targetという項目についてdata(formやconfig)が満たしているかを確認する関数check_target
-fn check_target ( data ) -> Result<(), E>
-```
+ここでのバリデーションとは、データを見たとき、それを変更することなくある形式に従っているかチェックすることとします.
 
-入力を変更せずにある項目について満たしているかチェックする、いわゆるバリデーションです.
-
-ところで、フォームを入力しているユーザーにとって、可能であれば、一回でできる限りのcheckはされて欲しいでしょう.
-
-具体的にはフォームが以下のような状態だったときに、
-
-```
-first name : empty
-last name : empty
-```
-
-処理はチェック関数が「first nameはemptyではないか？」「last nameはemptyではないか？」とチェックしていきます。
-入力にエラーがある(emptyな入力部分が存在する)場合は詳細に、
-「first nameが空です」
-「last nameが空です」
-「fist name, last nameが空です」
-とエラーで拾えたすべての情報を出力したいでしょう.
+ある一つのチェック項目について満たしているか？を確かめる関数`f`を考えるとき以下のように設計するでしょう.
 
 ```rs
-/* 擬似的な例 */
-// dataにはチェック対象のformが入る
-// 特定の形式の引数と戻り値を持ったチェック用関数は自動的にcheckトレイトが実装されます。
-// 
-fn check_first_name_is_not_empty ( data ) -> Result<(), E1>;
-fn check_last_name_is_not_empty ( data ) -> Result<(), E2>;
+fn f(data: T) -> Result<(), E>
 ```
 
-これらのチェックはどちらかが失敗していてもお互い独立したチェックなので、後続するチェックができないという事態にはなりません.
-そして、どちらでもerrorが起きた場合にはそれらをすべてキャッチし、その情報をすべて返したいです.
-
-error-combinatorはこのような関数を合成して新しい関数を生成するためのライブラリです.
-例えば上のケースでは
+たくさんチェックする項目があったらどうでしょう.
 
 ```rs
-/* 擬似的な例 */
-let check_all_item = // 新しい関数を合成します
-    check_first_name_is_not_empty
-    /*orメソッドは前のチェックが失敗したとしても次のチェックを進めるという意味*/
-    .or</*返り値は自動的に算出されないのでそのための実装をします*/>(check_last_name_is_not_empty)
-
-// NEW_EはE1、E2の情報を含む
-fn check_all_item ( data ) -> Result<(), NEW_E>
+fn f0(data: T) -> Result<(), E0> // 返るerrorも若干違う
+fn f1(data: T) -> Result<(), E1>
+fn f2(data: T) -> Result<(), E2>
+fn f3(data: T) -> Result<(), E3>
+fn f4(data: T) -> Result<(), E4>
+fn f5(data: T) -> Result<(), E5>
+fn f6(data: T) -> Result<(), E6>
+fn f7(data: T) -> Result<(), E7>
+fn f8(data: T) -> Result<(), E8>
+fn f9(data: T) -> Result<(), E9>
 ```
-のようになります
 
-例のケースは、ライブラリの使用が必要になるほど面倒ではないですが、チェックのロジックが複雑な場合には利点があるかもしれません.
+更にこの関数同士の処理として`f0`,`f1`関数が行う処理の結果によっては後続のチェックはできないが`f2 - f9`の関数はエラーが起こっても処理自体は進めることができて、且つそこで起きたエラーすべてをユーザーに報告したいというシチュエーションがあるかもしれません。
 
-上の合成には、単にチェック関数を合成して新しい関数を作るだけでなく、新しい関数の返り値も設計する必要があります.
+エラーコンビネータはそんなケースにぴったりです。
 
-合成関数の戻り値となるエラーはcheck関数の合成から自動的に導き出せるものではないからです.
+## 使い方
+
+error-combinatorではデータがある項目についてチェックされたか否かを型で表現します。
+先程の関数では表現できていないため`lift`関数を使ってerror-combinator用の新しいチェッカーを作成します。
+
+```rs
+struct Unchecked;
+struct Checked;
+
+fn f(data: T) -> Result<(), E> {
+    ...
+}
+
+let checker = lift::<_,_,Unchecked/* 事前条件 */,Checked/* 事後条件 */,_,_>(f);
+```
+
+`lift`関数は下のように設計されています.
+```rs
+pub fn lift<V, T, Pre, Post, E, F>(
+    f: F
+) -> impl Check<V, Pre, PostState = Post, Error = E>
+where
+    T: ?Sized,
+    V: Borrow<T>,
+    F: Fn(&T) -> Result<(), E>,
+```
+
+`impl Check<...>`が`checker`に束縛されます。
+
+Checkトレイトを実装したもの同士は合成という操作によって新しいCheckトレイトを実装することができます.
+
+合成はCheckトレイト自身のメソッド`.and(checker)` `.or(checker)`を通じてできます。
+
+```rs
+struct BothUnchecked;
+struct Checked0;
+struct Checked1;
+
+fn f0(data: T) -> Result<(), E0> { ... }
+fn f1(data: T) -> Result<(), E1> { ... }
+
+let checker0 = lift::<_,_,BothUnchecked/* 事前条件 */, Checked0/* 事後条件 */,_,_>(f0);
+let checker1 = lift::<_,_,Checked0/* 事前条件 */,Checked1/* 事後条件 */,_,_>(f1);
+
+// 合成によって新しいチェッカーを作成
+let checker0_and_checker1 = // checker0でErrだったら即終了
+    checker0.and(checker1);
+let checker0_or_checker1 =  // checker0でErrでもCheck処理を進める
+    checker0.or(checker1);
+
+// このままではエラーの合成のためのルールが足りない
+```
+
+ただ、関数の合成は自動でできますが、返り値のエラーはそのままでは合成できません.
+
+エラーデータの合成の仕方をerror-combinatorにヒントとして伝える必要があります.
+
+```rs
+checker0.or<_, Combine /*ここでエラーの合成のやり方をerror-combinatorに教える*/>(checker1)
+```
+
+Combineは以下のトレイトを実装している必要があります
+
+```rs
+// checker0.or<_, Combine>(checker1)
+// left   -(処理の進み)->  right
+
+// Combineは以下のトレイトを実装している必要がある
+
+pub trait CombineError<EA, EB> {
+    type Out;
+
+    fn new() -> Self;
+    fn left(&mut self, ea: EA);
+    fn right(&mut self, eb: EB);
+    fn finish(self) -> Self::Out;
+}
+
+```
+
+軽くCombineを実装してみましょう
+
+```rs
+enum NewE {
+    e0(E0),
+    e1(E1),
+}
+
+struct Combine {
+    data: Vec<NewE>
+}
+
+impl CombineError<E0, E1> for Combine {
+    type Out = Vec<NewE>;
+
+    fn new() -> Self {
+        Self {
+            data: Vec::new()
+        }
+    }     
+    fn left(&mut self, ea: E0) {
+        self.data.push(NewE::e0(ea));
+    }
+    fn right(&mut self, eb: E1) {
+        self.data.push(NewE::e1(eb));
+    }
+    fn finish(self) -> Self::Out {
+        self.data
+    }
+}
+```
+
 
 
